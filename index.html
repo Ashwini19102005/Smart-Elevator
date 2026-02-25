@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>Smart Elevator Digital Twin</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+<style>
+
+body{
+margin:0;
+background:#020617;
+font-family:Segoe UI;
+color:white;
+}
+
+.header{
+background:#0f172a;
+padding:15px;
+text-align:center;
+font-size:22px;
+letter-spacing:1px;
+}
+
+.container{
+display:flex;
+justify-content:center;
+gap:40px;
+margin-top:20px;
+}
+
+.cameraPanel{
+position:relative;
+}
+
+video,canvas{
+border-radius:10px;
+}
+
+.sidePanel{
+background:#0f172a;
+padding:20px;
+border-radius:12px;
+width:280px;
+}
+
+.card{
+background:#1e293b;
+padding:15px;
+border-radius:10px;
+margin-bottom:15px;
+}
+
+/* ===== LIFT DESIGN ===== */
+
+.liftPanel{
+display:flex;
+justify-content:space-around;
+margin-top:10px;
+}
+
+.lift{
+width:60px;
+height:150px;
+background:#1e293b;
+border-radius:10px;
+position:relative;
+display:flex;
+align-items:flex-end;
+justify-content:center;
+padding-bottom:5px;
+transition:0.3s;
+}
+
+.door{
+width:40px;
+height:90px;
+background:#334155;
+border-radius:4px;
+transition:0.3s;
+}
+
+.lift.active{
+background:#16a34a;
+box-shadow:0 0 15px #22c55e;
+}
+
+.lift.standby{
+background:#7f1d1d;
+}
+
+/* ===== LOAD BAR ===== */
+
+.loadContainer{
+background:#334155;
+height:20px;
+border-radius:10px;
+overflow:hidden;
+}
+
+.loadBar{
+height:20px;
+width:0%;
+background:#22c55e;
+transition:0.5s;
+}
+
+.systemMsg{
+margin-top:10px;
+font-size:14px;
+color:#cbd5e1;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="header">
+SMART ELEVATOR DIGITAL TWIN CONTROL PANEL
+</div>
+
+<div class="container">
+
+<div class="cameraPanel">
+<video id="video" width="600" height="400" autoplay></video>
+<canvas id="canvas" width="600" height="400"
+style="position:absolute;left:0;top:0;"></canvas>
+</div>
+
+<div class="sidePanel">
+
+<div class="card">
+<h3 id="people">People: 0</h3>
+<h3 id="mode">Energy Mode: NORMAL</h3>
+</div>
+
+<div class="card">
+<h3>Crowd Load</h3>
+<div class="loadContainer">
+<div id="loadBar" class="loadBar"></div>
+</div>
+<div id="systemMsg" class="systemMsg">
+System Ready
+</div>
+</div>
+
+<div class="card">
+<h3>Elevator Control Panel</h3>
+<div class="liftPanel">
+<div class="lift"><div class="door"></div></div>
+<div class="lift"><div class="door"></div></div>
+<div class="lift"><div class="door"></div></div>
+<div class="lift"><div class="door"></div></div>
+</div>
+</div>
+
+</div>
+</div>
+
+<script>
+
+const video=document.getElementById("video");
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+
+let model;
+let history=[];
+
+async function startCamera(){
+
+const stream=await navigator.mediaDevices.getUserMedia({video:true});
+video.srcObject=stream;
+
+video.onloadeddata=async()=>{
+model=await cocoSsd.load();
+detectFrame();
+}
+}
+
+async function detectFrame(){
+
+const predictions=await model.detect(video);
+
+ctx.clearRect(0,0,canvas.width,canvas.height);
+
+let peopleCount=0;
+
+predictions.forEach(p=>{
+
+if(p.class==="person"){
+peopleCount++;
+ctx.strokeStyle="lime";
+ctx.lineWidth=3;
+ctx.strokeRect(...p.bbox);
+}
+
+});
+
+history.push(peopleCount);
+if(history.length>3) history.shift();
+
+let avgPeople=Math.round(
+history.reduce((a,b)=>a+b,0)/history.length
+);
+
+document.getElementById("people").innerText=
+"People: "+avgPeople;
+
+/* ===== DIGITAL TWIN LOGIC ===== */
+
+let elevators=Math.ceil(avgPeople/2);
+
+if(elevators<1) elevators=1;
+if(elevators>4) elevators=4;
+
+const lifts=document.querySelectorAll(".lift");
+
+lifts.forEach((el,index)=>{
+
+if(index<elevators){
+el.classList.add("active");
+el.classList.remove("standby");
+}else{
+el.classList.add("standby");
+el.classList.remove("active");
+}
+
+});
+
+/* ===== ENERGY MODE ===== */
+
+let energy="NORMAL";
+
+if(elevators==1) energy="POWER SAVE";
+if(elevators==4) energy="HIGH LOAD";
+
+document.getElementById("mode").innerText=
+"Energy Mode: "+energy;
+
+/* ===== LOAD BAR ===== */
+
+let loadPercent=Math.min((avgPeople/10)*100,100);
+
+document.getElementById("loadBar").style.width=
+loadPercent+"%";
+
+let msg="Normal Operation";
+
+if(loadPercent<20)
+msg="Energy Saving Mode Active";
+else if(loadPercent>70)
+msg="High Crowd - Extra Elevators Activated";
+
+document.getElementById("systemMsg").innerText=msg;
+
+requestAnimationFrame(detectFrame);
+
+}
+
+startCamera();
+
+</script>
+
+</body>
+</html>
